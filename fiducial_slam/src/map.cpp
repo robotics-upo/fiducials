@@ -453,7 +453,7 @@ static int findClosestObs(const std::vector<Observation> &obs) {
 void Map::autoInit(const std::vector<Observation> &obs, const ros::Time &time) {
     ROS_INFO("Auto init map %d", frameNum);
 
-    tf2::Transform T_baseCam;
+    tf2::Transform T_baseCam, T_map_base;
 
     if (fiducials.size() == 0) {
         int idx = findClosestObs(obs);
@@ -469,7 +469,13 @@ void Map::autoInit(const std::vector<Observation> &obs, const ros::Time &time) {
         tf2::Stamped<TransformWithVariance> T = o.T_camFid;
 
         if (lookupTransform(baseFrame, o.T_camFid.frame_id_, o.T_camFid.stamp_, T_baseCam)) {
-            T.setData(T_baseCam * T);
+            if (use_external_loc) {
+                if (lookupTransform(mapFrame, baseFrame, ros::Time(0), T_map_base)) {
+                    T.setData(T_map_base * T_baseCam * T);
+                }
+            } else {
+                T.setData(T_baseCam * T);
+            }
         }
 
         fiducials[o.fid] = Fiducial(o.fid, T);
