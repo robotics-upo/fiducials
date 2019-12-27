@@ -66,7 +66,6 @@ private:
     ros::Subscriber ft_sub;
 
     ros::Subscriber verticesSub;
-    ros::Subscriber cameraInfoSub;
     
     bool use_fiducial_area_as_weight;
     double weighting_scale;

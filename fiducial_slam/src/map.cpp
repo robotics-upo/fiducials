@@ -173,8 +173,9 @@ void Map::update(std::vector<Observation> &obs, const ros::Time &time) {
         T_mapCam.frame_id_ = mapFrame;
 
         // if (updatePose(obs, time, T_mapCam) > 0 && obs.size() > 1 && !readOnly) {
-        if (obs.size() > 1 && !readOnly) {
-            if (updatePose(obs, time, T_mapCam) > 0 || use_external_loc)
+        int ret = updatePose(obs, time, T_mapCam);
+        if (obs.size() > 0 && !readOnly) {
+            if (ret > 0 || use_external_loc)
                 updateMap(obs, time, T_mapCam);
         }
     }
@@ -472,13 +473,15 @@ void Map::autoInit(const std::vector<Observation> &obs, const ros::Time &time) {
             if (use_external_loc) {
                 if (lookupTransform(mapFrame, baseFrame, ros::Time(0), T_map_base)) {
                     T.setData(T_map_base * T_baseCam * T);
+                    fiducials[o.fid] = Fiducial(o.fid, T);
                 }
             } else {
                 T.setData(T_baseCam * T);
+                fiducials[o.fid] = Fiducial(o.fid, T);
             }
         }
 
-        fiducials[o.fid] = Fiducial(o.fid, T);
+        
     } else {
         for (const Observation &o : obs) {
             if (o.fid == originFid) {
@@ -490,7 +493,13 @@ void Map::autoInit(const std::vector<Observation> &obs, const ros::Time &time) {
 
                 if (lookupTransform(baseFrame, o.T_camFid.frame_id_, o.T_camFid.stamp_,
                                     T_baseCam)) {
-                    T.setData(T_baseCam * T);
+                    if (use_external_loc) {
+                        if (lookupTransform(mapFrame, baseFrame, ros::Time(0), T_map_base)) {
+                            T.setData(T_map_base * T_baseCam * T);                            
+                        }
+                    } else {
+                        T.setData(T_baseCam * T);
+                    }
                 }
 
                 fiducials[originFid].update(T);
