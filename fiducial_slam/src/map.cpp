@@ -101,6 +101,8 @@ Map::Map(ros::NodeHandle &nh) : tfBuffer(ros::Duration(30.0)) {
     clearSrv = nh.advertiseService("clear_map", &Map::clearCallback, this);
     addSrv = nh.advertiseService("add_fiducial", &Map::addFiducialCallback, this);
 
+    robotPoseSub = nh.subscribe("in_pose",1, &Map::poseCovarianceCallback, this);
+
     nh.param<std::string>("map_frame", mapFrame, "map");
     nh.param<std::string>("odom_frame", odomFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_footprint");
@@ -111,6 +113,10 @@ Map::Map(ros::NodeHandle &nh) : tfBuffer(ros::Duration(30.0)) {
     nh.param<double>("future_date_transforms", future_date_transforms, 0.1);
     nh.param<bool>("publish_6dof_pose", publish_6dof_pose, false);
     nh.param<bool>("read_only_map", readOnly, false);
+    
+    // External loc additionss
+    nh.param<bool>("use_external_loc", use_external_loc, false);
+    last_pose_variance = 1.0;
 
     std::fill(covarianceDiagonal.begin(), covarianceDiagonal.end(), 0);
     overridePublishedCovariance = nh.getParam("covariance_diagonal", covarianceDiagonal);
@@ -166,8 +172,10 @@ void Map::update(std::vector<Observation> &obs, const ros::Time &time) {
         tf2::Stamped<TransformWithVariance> T_mapCam;
         T_mapCam.frame_id_ = mapFrame;
 
-        if (updatePose(obs, time, T_mapCam) > 0 && obs.size() > 1 && !readOnly) {
-            updateMap(obs, time, T_mapCam);
+        // if (updatePose(obs, time, T_mapCam) > 0 && obs.size() > 1 && !readOnly) {
+        if (obs.size() > 1 && !readOnly) {
+            if (updatePose(obs, time, T_mapCam) > 0 || use_external_loc)
+                updateMap(obs, time, T_mapCam);
         }
     }
 
@@ -232,7 +240,8 @@ bool Map::lookupTransform(const std::string &from, const std::string &to, const 
     geometry_msgs::TransformStamped transform;
 
     try {
-        transform = tfBuffer.lookupTransform(from, to, time);
+        // transform = tfBuffer.lookupTransform(from, to, time);
+        transform = tfBuffer.lookupTransform(from, to, ros::Time(0));
 
         tf2::fromMsg(transform.transform, T);
         return true;
@@ -322,6 +331,16 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
 
     if (numEsts == 0) {
         ROS_INFO("Finished frame - no estimates\n");
+        if (use_external_loc) {
+            if (lookupTransform(mapFrame, obs[0].T_camFid.frame_id_, ros::Time(0), T_mapCam.transform)) {                              
+                tf2::Vector3 c = T_mapCam.transform.getOrigin();
+                ROS_INFO("Obtained external transform:   %lf %lf %lf", c.x(), c.y(), c.z());
+            }
+
+            T_mapCam.variance = last_pose_variance;
+
+        }
+
         return numEsts;
     }
 
@@ -380,7 +399,7 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
     poseTf.child_frame_id = outFrame;
     havePose = true;
 
-    if (publishPoseTf) {
+    if (publishPoseTf && !use_external_loc) {
         publishTf();
     }
 
@@ -823,3 +842,8 @@ bool Map::addFiducialCallback(fiducial_slam::AddFiducial::Request &req,
 
    return true;
 }
+
+void Map::poseCovarianceCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr &msg) {
+    last_pose_variance = msg->pose.covariance[0];
+}
+

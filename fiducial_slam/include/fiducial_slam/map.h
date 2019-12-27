@@ -99,6 +99,7 @@ public:
     ros::Publisher mapPub;
     ros::Publisher robotPosePub;
     ros::Publisher cameraPosePub;
+    
 
     ros::ServiceServer clearSrv;
     ros::ServiceServer addSrv;
@@ -120,6 +121,11 @@ public:
     int frameNum;
     int initialFrameNum;
     int originFid;
+    bool use_external_loc; // If true, this is used to refine an external localization module. PublishTf should be false
+    ros::Subscriber robotPoseSub; // used with External Localization --> gets the covariance estimate of the pose
+    double last_pose_variance; // Last covariance of the external pose estimate
+
+    void poseCovarianceCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr &msg);
 
     bool overridePublishedCovariance;
     std::vector<double> covarianceDiagonal;
