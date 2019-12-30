@@ -68,6 +68,8 @@ public:
     Observation(){};
 
     Observation(int fid, const tf2::Stamped<TransformWithVariance> &camFid);
+
+    double getDistance() const;
 };
 
 // A single fiducial that is in the map
