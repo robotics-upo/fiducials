@@ -63,6 +63,11 @@ Observation::Observation(int fid, const tf2::Stamped<TransformWithVariance> &cam
     T_fidCam.transform = T_camFid.transform.inverse();
 }
 
+double Observation::getDistance() const {
+    tf2::Vector3 t = T_camFid.transform.getOrigin();
+    return sqrt(t.x() + t.y() + t.z());
+}
+
 // Update a fiducial position in map with a new estimate
 void Fiducial::update(const tf2::Stamped<TransformWithVariance> &newPose) {
     pose.update(newPose);
@@ -168,7 +173,7 @@ void Map::update(std::vector<Observation> &obs, const ros::Time &time) {
 
     if (isInitializingMap) {
         autoInit(obs, time);
-    } else {
+    } else if (obs.size() > 0) {
         tf2::Stamped<TransformWithVariance> T_mapCam;
         T_mapCam.frame_id_ = mapFrame;
 
@@ -214,8 +219,18 @@ void Map::updateMap(const std::vector<Observation> &obs, const ros::Time &time,
         }
 
         if (fiducials.find(o.fid) == fiducials.end()) {
-            ROS_INFO("New fiducial %d", o.fid);
-            fiducials[o.fid] = Fiducial(o.fid, T_mapFid);
+            bool add = true;
+
+            if (use_external_loc) {
+                add = o.getDistance() < 2.0;
+            }
+            if (add) {
+                ROS_INFO("New fiducial %d", o.fid);
+                fiducials[o.fid] = Fiducial(o.fid, T_mapFid);
+            } else {
+                continue;
+            }
+            
         }
         Fiducial &f = fiducials[o.fid];
         f.visible = true;
@@ -245,7 +260,10 @@ bool Map::lookupTransform(const std::string &from, const std::string &to, const 
         transform = tfBuffer.lookupTransform(from, to, ros::Time(0));
 
         tf2::fromMsg(transform.transform, T);
-        return true;
+        tf2::Vector3 c = T.getOrigin();
+        
+
+        return !isnan(c.x()) && !isnan(c.y()) && !isnan(c.z());
     } catch (tf2::TransformException &ex) {
         ROS_WARN("%s", ex.what());
         return false;
@@ -261,6 +279,16 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
     tf2::Stamped<TransformWithVariance> T_camBase;
     tf2::Stamped<TransformWithVariance> T_baseCam;
     tf2::Stamped<TransformWithVariance> T_mapBase;
+
+    if (use_external_loc) {
+        if (lookupTransform(mapFrame, obs[0].T_camFid.frame_id_, ros::Time(0), T_mapCam.transform)) {                              
+            tf2::Vector3 c = T_mapCam.transform.getOrigin();
+            ROS_INFO("Obtained external transform:   %lf %lf %lf", c.x(), c.y(), c.z());
+        }
+
+        T_mapCam.variance = last_pose_variance;
+
+    }
 
     if (obs.size() == 0) {
         return 0;
@@ -300,12 +328,16 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
             // Create variance according to how well the robot is upright on the ground
             // TODO: Create variance for each DOF
             // TODO: Take into account position according to odom
-            auto cam_f = o.T_camFid.transform.getOrigin();
-            double s1 = std::pow(position.z() / cam_f.z(), 2) *
-                        (std::pow(cam_f.x(), 2) + std::pow(cam_f.y(), 2));
-            double s2 = position.length2() * std::pow(std::sin(roll), 2);
-            double s3 = position.length2() * std::pow(std::sin(pitch), 2);
-            p.variance = s1 + s2 + s3 + systematic_error;
+            // auto cam_f = o.T_camFid.transform.getOrigin();
+            // double s1 = std::pow(position.z() / cam_f.z(), 2) *
+            //             (std::pow(cam_f.x(), 2) + std::pow(cam_f.y(), 2));
+            // double s2 = position.length2() * std::pow(std::sin(roll), 2);
+            // double s3 = position.length2() * std::pow(std::sin(pitch), 2);
+            // p.variance = s1 + s2 + s3 + systematic_error;
+            // o.T_camFid.variance = p.variance;
+
+            // Variance according to the observation distance
+            p.variance = o.T_fidCam.variance;
             o.T_camFid.variance = p.variance;
 
             ROS_INFO("Pose %d %lf %lf %lf %lf %lf %lf %lf", o.fid, position.x(), position.y(),
@@ -332,17 +364,21 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
 
     if (numEsts == 0) {
         ROS_INFO("Finished frame - no estimates\n");
-        if (use_external_loc) {
-            if (lookupTransform(mapFrame, obs[0].T_camFid.frame_id_, ros::Time(0), T_mapCam.transform)) {                              
-                tf2::Vector3 c = T_mapCam.transform.getOrigin();
-                ROS_INFO("Obtained external transform:   %lf %lf %lf", c.x(), c.y(), c.z());
-            }
-
-            T_mapCam.variance = last_pose_variance;
-
-        }
 
         return numEsts;
+    }
+
+
+    if (use_external_loc && !readOnly) {
+        // Add the external localization to the mix
+        tf2::Stamped<TransformWithVariance> p;
+         if (lookupTransform(mapFrame, baseFrame, ros::Time(0), p.transform)) {                              
+            tf2::Vector3 c = T_mapCam.transform.getOrigin();
+            ROS_INFO("Obtained external transform:   %lf %lf %lf", c.x(), c.y(), c.z());
+        }
+        p.variance = last_pose_variance;
+        T_mapBase.setData(averageTransforms(T_mapBase, p));
+        T_mapBase.stamp_ = p.stamp_;
     }
 
     // New scope for logging vars
@@ -361,7 +397,7 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
 
     if (overridePublishedCovariance) {
         for (int i = 0; i <= 5; i++) {
-            robotPose.pose.covariance[i * 6 + i] = covarianceDiagonal[i];  // Fill the diagonal
+            robotPose.pose.covariance[i * 7] = covarianceDiagonal[i];  // Fill the diagonal
         }
     }
 
@@ -450,18 +486,27 @@ static int findClosestObs(const std::vector<Observation> &obs) {
 // Figure out the closest marker, and then figure out the
 // pose of that marker such that base_link is at the origin of the
 // map frame
-
 void Map::autoInit(const std::vector<Observation> &obs, const ros::Time &time) {
-    ROS_INFO("Auto init map %d", frameNum);
+    ROS_INFO("Map::autoInit --> Auto init map %d", frameNum);
 
     tf2::Transform T_baseCam, T_map_base;
+
+    if (obs.size() == 0)
+        return;
 
     if (fiducials.size() == 0) {
         int idx = findClosestObs(obs);
 
         if (idx == -1) {
             ROS_WARN("Could not find a fiducial to initialize map from");
+            return;
         }
+
+        if (use_external_loc && obs[idx].getDistance() > 3.0) {
+            ROS_INFO("Map::autoInit --> Observation too far away to initialize the map");
+            return;
+        }
+
         const Observation &o = obs[idx];
         originFid = o.fid;
 

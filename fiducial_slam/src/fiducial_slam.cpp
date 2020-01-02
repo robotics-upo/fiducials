@@ -101,7 +101,7 @@ void FiducialSlam::transformCallback(const fiducial_msgs::FiducialTransformArray
                                             msg->header.stamp, msg->header.frame_id));
         observations.push_back(obs);
     }
-
+    
     fiducialMap.update(observations, msg->header.stamp);
 }
 
@@ -122,6 +122,8 @@ FiducialSlam::FiducialSlam(ros::NodeHandle &nh) : fiducialMap(nh) {
 int main(int argc, char **argv) {
     ros::init(argc, argv, "fiducial_slam");
     ros::NodeHandle nh("~");
+
+    sleep(10);
 
     auto node = make_unique<FiducialSlam>(nh);
     ros::Rate r(20);
