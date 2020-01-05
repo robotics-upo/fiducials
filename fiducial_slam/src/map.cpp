@@ -220,8 +220,8 @@ void Map::updateMap(const std::vector<Observation> &obs, const ros::Time &time,
 
         if (fiducials.find(o.fid) == fiducials.end()) {
             bool add = true;
-
             if (use_external_loc) {
+                ROS_INFO("Fid: %d:\tO Distance: %f",o.fid,  o.getDistance());
                 add = o.getDistance() < 2.0;
             }
             if (add) {
@@ -234,10 +234,11 @@ void Map::updateMap(const std::vector<Observation> &obs, const ros::Time &time,
         }
         Fiducial &f = fiducials[o.fid];
         f.visible = true;
-        if (f.pose.variance != 0) {
-            f.update(T_mapFid);
-            f.numObs++;
+        if (std::abs(f.pose.variance) < 1e-9) {
+                f.pose.variance = 0.01;
         }
+        f.update(T_mapFid);
+        f.numObs++;
 
         for (const Observation &observation : obs) {
             int fid = observation.fid;
