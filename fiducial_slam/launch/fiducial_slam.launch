@@ -28,7 +28,7 @@
     <param name="publish_6dof_pose" value="$(arg publish_6dof_pose)" />
     <param name="sum_error_in_quadrature" value="true"/>
     <param name="fiducial_len" value="$(arg fiducial_len)"/>
-    <param name="covariance_diagonal" value="$(arg covariance_diagonal)"/>
+    <rosparam param="covariance_diagonal" subst_value="True">$(arg covariance_diagonal)</rosparam>
     <remap from="/camera_info" to="$(arg camera)/camera_info"/>
     <param name="use_external_loc"  value="$(arg use_external_loc)"/>
     <param name="read_only_map"  value="$(arg read_only_map)"/>
