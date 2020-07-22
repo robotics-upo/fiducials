@@ -801,7 +801,7 @@ void Map::publishMarker(Fiducial &fid) {
     text.header.frame_id = mapFrame;
     text.color.r = text.color.g = text.color.b = text.color.a = 1.0f;
     text.id = fid.id;
-    text.scale.x = text.scale.y = text.scale.z = 0.1;
+    text.scale.x = text.scale.y = text.scale.z = 0.5;
     text.pose.position.x = marker.pose.position.x;
     text.pose.position.y = marker.pose.position.y;
     text.pose.position.z = marker.pose.position.z;
