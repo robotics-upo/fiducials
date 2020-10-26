@@ -758,6 +758,12 @@ void Map::publishMarker(Fiducial &fid) {
     marker.action = visualization_msgs::Marker::ADD;
     toMsg(fid.pose.transform, marker.pose);
 
+    geometry_msgs::Quaternion q;
+    q.x = 0.0;
+    q.y = 0.0;
+    q.z = 0.0;
+    q.w = 1.0;
+
     marker.scale.x = 0.15;
     marker.scale.y = 0.15;
     marker.scale.z = 0.01;
@@ -794,6 +800,7 @@ void Map::publishMarker(Fiducial &fid) {
     cylinder.pose.position.y = marker.pose.position.y;
     cylinder.pose.position.z = marker.pose.position.z;
     cylinder.pose.position.z += (marker.scale.z / 2.0) + 0.05;
+    cylinder.pose.orientation = q;
     markerPub.publish(cylinder);
 
     // Text
@@ -807,6 +814,7 @@ void Map::publishMarker(Fiducial &fid) {
     text.pose.position.x = marker.pose.position.x;
     text.pose.position.y = marker.pose.position.y;
     text.pose.position.z = marker.pose.position.z;
+    text.pose.orientation = q;
     text.pose.position.z += (marker.scale.z / 2.0) + 0.1;
     text.id = fid.id + 30000;
     text.ns = "text";
@@ -828,6 +836,7 @@ void Map::publishMarker(Fiducial &fid) {
     links.pose.position.x = 0;
     links.pose.position.y = 0;
     links.pose.position.z = 0;
+    links.pose.orientation = q;
 
     geometry_msgs::Point gp0, gp1;
     tf2::Vector3 p0 = fid.pose.transform.getOrigin();
