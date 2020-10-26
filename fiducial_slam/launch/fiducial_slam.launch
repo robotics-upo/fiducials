@@ -12,7 +12,7 @@
   <arg name="publish_6dof_pose" default="false"/>
   <arg name="fiducial_len" default="0.23"/>
   <arg name="systematic_error" default="0.01"/>
-  <arg name="covariance_diagonal" default="[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"/>
+  <arg name="covariance_diagonal" default="[0.2, 0.2, 0.2, 0.2, 0.2, 0.2]"/>
   <arg name="use_external_loc"  default="true"/>
   <arg name="read_only_map" default="false"/>
   <arg name="weighting_scale" default="10"/>
