@@ -270,9 +270,13 @@ bool Map::lookupTransform(const std::string &from, const std::string &to, const 
     }
 }
 
-// update pose estimate of robot.  We combine the camera->base_link
+// update pose estimate of robot.  
+
+// In the previous version: We combine the camera->base_link
 // tf to each estimate so we can evaluate how good they are.  A good
 // estimate would have z == roll == pitch == 0.
+
+// Currently we use the error of the fiducial observation
 int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
                     tf2::Stamped<TransformWithVariance> &T_mapCam) {
     int numEsts = 0;
@@ -336,9 +340,8 @@ int Map::updatePose(std::vector<Observation> &obs, const ros::Time &time,
             // p.variance = s1 + s2 + s3 + systematic_error;
             // o.T_camFid.variance = p.variance;
 
-            // Variance according to the observation distance
+            // Variance according to the observed variance
             p.variance = o.T_fidCam.variance;
-            o.T_camFid.variance = p.variance;
 
             ROS_INFO("Pose %d %lf %lf %lf %lf %lf %lf %lf", o.fid, position.x(), position.y(),
                      position.z(), roll, pitch, yaw, p.variance);
