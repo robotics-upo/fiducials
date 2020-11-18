@@ -17,6 +17,7 @@
   <arg name="read_only_map" default="false"/>
   <arg name="weighting_scale" default="10"/>
   <arg name="map_file" default="$(env HOME)/.ros/slam/map.txt" />
+  <arg name="add_variance" default="0.0"/>
 
   <node type="fiducial_slam" pkg="fiducial_slam" name="fiducial_slam"> 
 
@@ -35,5 +36,6 @@
     <param name="use_external_loc"  value="$(arg use_external_loc)"/>
     <param name="read_only_map"  value="$(arg read_only_map)"/>
     <param name="weighting_scale" value="$(arg weighting_scale)"/>
+    <param name="add_variance" value="$(arg add_variance)"/>
   </node>
 </launch>

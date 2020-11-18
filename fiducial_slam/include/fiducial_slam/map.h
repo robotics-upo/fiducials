@@ -117,9 +117,10 @@ public:
     double future_date_transforms;
     bool publish_6dof_pose;
     double multiErrorThreshold;
+    double add_variance;
 
     bool isInitializingMap;
-    bool readOnly;
+    bool readOnly, override_variance;
     int frameNum;
     int initialFrameNum;
     int originFid;

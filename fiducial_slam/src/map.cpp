@@ -113,6 +113,8 @@ Map::Map(ros::NodeHandle &nh) : tfBuffer(ros::Duration(30.0)) {
     nh.param<double>("future_date_transforms", future_date_transforms, 0.1);
     nh.param<bool>("publish_6dof_pose", publish_6dof_pose, false);
     nh.param<bool>("read_only_map", readOnly, false);
+    nh.param<double>("add_variance", add_variance, 0.0);
+    nh.param<bool>("override_variance", override_variance, false);
     
     // External loc additionss
     nh.param<bool>("use_external_loc", use_external_loc, false);
@@ -120,6 +122,7 @@ Map::Map(ros::NodeHandle &nh) : tfBuffer(ros::Duration(30.0)) {
 
     std::fill(covarianceDiagonal.begin(), covarianceDiagonal.end(), 0);
     overridePublishedCovariance = nh.getParam("covariance_diagonal", covarianceDiagonal);
+    
     if (overridePublishedCovariance) {
         if (covarianceDiagonal.size() != 6) {
             ROS_WARN("ignoring covariance_diagonal because it has %ld elements, not 6", covarianceDiagonal.size());
@@ -676,6 +679,12 @@ bool Map::loadMap(std::string filename) {
         linkbuf[0] = '\0';
         int nElems = sscanf(linebuf, "%d %lf %lf %lf %lf %lf %lf %lf %d%[^\t\n]*s", &id, &tx, &ty,
                             &tz, &rx, &ry, &rz, &var, &numObs, linkbuf);
+
+        var += add_variance;
+        if (override_variance) {
+            var = add_variance;
+        }
+
         if (nElems == 9 || nElems == 10) {
             tf2::Vector3 tvec(tx, ty, tz);
             tf2::Quaternion q;
