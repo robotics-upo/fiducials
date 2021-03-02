@@ -125,7 +125,7 @@ int main(int argc, char **argv) {
 
     sleep(10);
 
-    auto node = make_unique<FiducialSlam>(nh);
+    std::unique_ptr<FiducialSlam> node = std::make_unique<FiducialSlam>(nh);
     ros::Rate r(20);
     while (ros::ok()) {
         ros::spinOnce();

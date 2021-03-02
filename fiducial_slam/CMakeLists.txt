@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(fiducial_slam)
 
+## Compile as C++14, supported in ROS Kinetic and newer
+add_compile_options(-std=c++14)
+
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   tf2_geometry_msgs
@@ -14,7 +17,11 @@ find_package(catkin REQUIRED COMPONENTS
   genmsg
 )
 
+SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake_modules)
+
 find_package(OpenCV REQUIRED)
+find_package(G2O REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 ##############
 ## Services ##
@@ -42,14 +49,27 @@ include_directories(${catkin_INCLUDE_DIRS} include)
 catkin_package(INCLUDE_DIRS include
   DEPENDS OpenCV)
 
-include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(${OpenCV_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS}, ${G2O_INCLUDE_DIRS})
 
-add_executable(fiducial_slam src/fiducial_slam.cpp
-               src/map.cpp src/transform_with_variance.cpp)
+add_executable(fiducial_slam src/fiducial_slam.cpp 
+src/Fiducial.cpp src/Observation.cpp
+src/base_map.cpp src/map.cpp src/transform_with_variance.cpp)
 add_dependencies(fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
+add_executable(g2o_fiducial_slam src/g2o_fiducial_slam.cpp
+               src/base_map.cpp src/transform_with_variance.cpp
+               src/Fiducial.cpp src/Observation.cpp
+               src/g2o_files/edge_se2.cpp
+               src/g2o_files/parameter_se2_offset.cpp
+               src/g2o_files/types_slam2d.cpp
+               src/g2o_files/vertex_se2.cpp
+               )
+add_dependencies(g2o_fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
+                 ${catkin_EXPORTED_TARGETS})
+
 target_link_libraries(fiducial_slam ${catkin_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(g2o_fiducial_slam ${catkin_LIBRARIES} ${OpenCV_LIBS} ${G2O_LIBRARIES})
 
 #############
 ## Install ##
