@@ -384,6 +384,9 @@ void G2OFiducialSlam::optimize(int n_rounds, bool online) {
   if (_g2o_file.size() > 0) {
     _optimizer.save(_g2o_file.c_str());
   }
+  
+  // Save the map in the fiducial format --> so that we can use EKF to estimate the pose online for ground truth
+  saveMap();
 }
 
 std::unique_ptr<G2OFiducialSlam> node;

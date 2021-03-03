@@ -302,7 +302,7 @@ void BaseMap::publishMarker(int fid) const {
         markerPub.publish(m);
     }
 
-    // markerPub.publish(links);
+    // markerPub.publish(links); TODO: add links between fiducials
 }
 
 // Publish a line marker between two points
