@@ -9,7 +9,10 @@
 #include <nav_msgs/Path.h>
 
 using namespace std;
-using namespace g2o::tutorial;
+using namespace g2o;
+
+
+#include <fiducial_slam/helpers.h>
 
 G2OFiducialSlam::G2OFiducialSlam() {
     // If set, use the fiducial area in pixels^2 as an indication of the
@@ -30,9 +33,9 @@ G2OFiducialSlam::G2OFiducialSlam() {
     _optimize_service = pnh.advertiseService("optimize", &G2OFiducialSlam::optimizeServiceService, this);
 
     // G2O initialization
-    _linear_solver = g2o::make_unique<SlamLinearSolver>();
+    _linear_solver = ::make_unique<SlamLinearSolver>();
     _linear_solver->setBlockOrdering(false);
-    g2o::OptimizationAlgorithmGaussNewton * solver =new g2o::OptimizationAlgorithmGaussNewton(g2o::make_unique<SlamBlockSolver>(std::move(_linear_solver)));
+    g2o::OptimizationAlgorithmGaussNewton * solver =new g2o::OptimizationAlgorithmGaussNewton(::make_unique<SlamBlockSolver>(std::move(_linear_solver)));
     _optimizer.setAlgorithm(solver);
 
     if (pnh.hasParam("stats_file")) {

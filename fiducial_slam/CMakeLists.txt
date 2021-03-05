@@ -60,10 +60,6 @@ add_dependencies(fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
 add_executable(g2o_fiducial_slam src/g2o_fiducial_slam.cpp
                src/base_map.cpp src/transform_with_variance.cpp
                src/Fiducial.cpp src/Observation.cpp
-               src/g2o_files/edge_se2.cpp
-               src/g2o_files/parameter_se2_offset.cpp
-               src/g2o_files/types_slam2d.cpp
-               src/g2o_files/vertex_se2.cpp
                )
 add_dependencies(g2o_fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
