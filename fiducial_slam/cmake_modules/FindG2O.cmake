@@ -82,7 +82,7 @@ IF(UNIX)
   ELSE(G2O_LIBRARIES AND G2O_INCLUDE_DIR)
     IF(NOT G2O_LIBRARIES)
       IF(G2O_FIND_REQUIRED)
-        message(FATAL_ERROR "Could not find libg2o!")
+        message(FATAL_ERROR "Could not find libg2o! ${G2O_LIBRARIES}")
       ENDIF(G2O_FIND_REQUIRED)
     ENDIF(NOT G2O_LIBRARIES)
 

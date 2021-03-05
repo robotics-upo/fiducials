@@ -7,8 +7,6 @@
 
 #pragma once
 
-#include <fiducial_slam/helpers.h>
-
 #include <assert.h>
 #include <signal.h>
 #include <sys/time.h>
@@ -36,7 +34,7 @@
 #include <string>
 
 #include "Fiducial.h"
-#include "types_slam2d.h"
+#include "g2o/types/slam2d/types_slam2d.h"
 
 #include "g2o/core/sparse_optimizer.h"
 #include "g2o/core/block_solver.h"
