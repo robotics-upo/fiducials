@@ -4,17 +4,13 @@
  *
  * See LICENSE file for distribution details
  */
-#include "fiducial_slam/g2o_fiducial_slam.h"
-
-#include <nav_msgs/Path.h>
+#include "fiducial_slam/g2o_fiducial_map.h"
+#include <fiducial_slam/helpers.h>
 
 using namespace std;
 using namespace g2o;
 
-
-#include <fiducial_slam/helpers.h>
-
-G2OFiducialSlam::G2OFiducialSlam() {
+G2OFiducialMap::G2OFiducialMap() {
     // If set, use the fiducial area in pixels^2 as an indication of the
     // 'goodness' of it. This will favor fiducials that are close to the
     // camera and center of the image. The reciprical of the area is actually
@@ -27,11 +23,9 @@ G2OFiducialSlam::G2OFiducialSlam() {
     pnh.param<double>("weighting_scale", _weighting_scale, 1.0);
     pnh.param<double>("max_observation_distance", _max_obs_dist, 2.0);
 
-    _ft_sub = nh.subscribe("/fiducial_transforms", 1, &G2OFiducialSlam::transformCallback, this);
+    _ft_sub = nh.subscribe("/fiducial_transforms", 1, &G2OFiducialMap::transformCallback, this);
 
-    _path_pub = ros::Publisher(pnh.advertise<nav_msgs::Path>("/path", 100));
-
-    _optimize_service = pnh.advertiseService("optimize", &G2OFiducialSlam::optimizeServiceService, this);
+    _optimize_service = pnh.advertiseService("optimize", &G2OFiducialMap::optimizeService, this);
 
     // G2O initialization
     _linear_solver = ::make_unique<SlamLinearSolver>();
@@ -46,34 +40,13 @@ G2OFiducialSlam::G2OFiducialSlam() {
     }
 
     // Information of odometry, etc.
-    double rot_noise, trans_noise_x, trans_noise_y;
-    pnh.param<double>("rot_noise", rot_noise, 0.05);
-    pnh.param<double>("trans_noise_x", trans_noise_x, 0.05);
-    pnh.param<double>("trans_noise_y", trans_noise_y, 0.02);
-    Eigen::Matrix3d covariance;
-    covariance.fill(0.);
-    covariance(0, 0) = trans_noise_x*trans_noise_x;
-    covariance(1, 1) = trans_noise_y*trans_noise_y; 
-    covariance(2, 2) = rot_noise*rot_noise;
-    _odometry_information = covariance.inverse();
-
-    _tf_map_odom.setOrigin(tf2::Vector3(0,0,0));
-    _tf_map_odom.setRotation(tf2::Quaternion(0,0,0,1));
-
     if (load(_g2o_file))
         ROS_INFO("Stats file %s loaded successfully", _g2o_file.c_str());
 
-    ROS_INFO("G2O Fiducial Slam ready");
+    ROS_INFO("G2O Fiducial Map ready");
 }
 
-bool G2OFiducialSlam::load(const std::string &filename) {
-    // Initialize path for visualization 
-    nav_msgs::Path p;
-    static int path_seq = 0;
-    p.header.frame_id = mapFrame;
-    p.header.stamp = ros::Time::now();
-    p.header.seq = path_seq++;
-
+bool G2OFiducialMap::load(const std::string &filename) {
     ROS_INFO("Loading: %s", filename.c_str());
     bool ret_val = false;
     _optimizer.load(filename.c_str());
@@ -84,9 +57,9 @@ bool G2OFiducialSlam::load(const std::string &filename) {
         auto y = dynamic_cast<VertexSE2 *> ( x.second);
         auto &pos = y->estimate();
         if (y == nullptr) continue;
-        if (x.first >= _fiducial_id_offset) {
+        if (x.first > 0) {   // Currently, FID 0 is not allowed!!!
             // Create
-            int fid = x.first - _fiducial_id_offset;
+            int fid = x.first;
 
             tf2::Stamped<TransformWithVariance> fid_pose;
             changeTf(fid_pose.transform, pos[0], pos[1], pos[2]);
@@ -97,32 +70,18 @@ bool G2OFiducialSlam::load(const std::string &filename) {
             fiducials[fid] = curr_fid;
             
             ROS_INFO ("Adding fid %d. x = %f. y = %f. yaw = %f", fid, pos[0], pos[1], pos[2]);
-        } else {
-            tf2::Transform t;
-            changeTf(t, pos[0], pos[1], pos[2]);
-            geometry_msgs::PoseStamped curr_pose;
-            curr_pose.header = p.header;
-            curr_pose.pose.orientation = tf2::toMsg(t.getRotation());
-            curr_pose.pose.position.x = pos[0];
-            curr_pose.pose.position.y = pos[1];
-            curr_pose.pose.position.z = 0.0;
-            p.poses.push_back(curr_pose);
-            max_id = std::max(max_id, x.first);
         }
     }
-    publishTf();
-    sleep(1);
-    ros::spinOnce();
     publishMarkers(); 
     ros::spinOnce(); 
     sleep(1);
 
-    _frame_num = max_id + 1;
+    _frame_num = 1;
     
     return ret_val;
   }
 
-void G2OFiducialSlam::transformCallback(const fiducial_msgs::FiducialTransformArray::ConstPtr &msg) {
+void G2OFiducialMap::transformCallback(const fiducial_msgs::FiducialTransformArray::ConstPtr &msg) {
     vector<Observation> observations;
 
     checkCameraTransform(msg->header.frame_id);
@@ -158,14 +117,14 @@ void G2OFiducialSlam::transformCallback(const fiducial_msgs::FiducialTransformAr
     updateG2O(observations, msg->header.stamp);
 }
 
-bool G2OFiducialSlam::optimizeServiceService(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res) {
+bool G2OFiducialMap::optimizeService(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res) {
     ROS_INFO("Calling optimize");
     optimize();
 
     return true;
 }
 
-void G2OFiducialSlam::updateG2O(std::vector<Observation> &obs, const ros::Time &time) {
+void G2OFiducialMap::updateG2O(std::vector<Observation> &obs, const ros::Time &time) {
     ROS_INFO("Updating map with %d observations. Map has %d fiducials", (int)obs.size(),
              (int)fiducials.size());
     // Get the current pose of the vehicle
@@ -173,44 +132,26 @@ void G2OFiducialSlam::updateG2O(std::vector<Observation> &obs, const ros::Time &
     if (lookupTransform(odomFrame, baseFrame, ros::Time(0), tf_odom_base.transform) && 
         lookupTransform(mapFrame, baseFrame, ros::Time(0), tf_map_base.transform) ) {
         if (obs.size() > 0) {
-            tf2::Stamped<TransformWithVariance> T_odom_cam;
-
             // Add robot position (from map)
-            double x, y, theta;
-            get_tf_coords(x,y,theta, tf_map_base.transform);
-
-            const SE2 robot_pose(x, y, theta);
-            VertexSE2* robot = new VertexSE2;
-            robot->setId(_frame_num);
-            robot->setEstimate(robot_pose);
-            _optimizer.addVertex(robot);
-
-
-            if (_frame_num > 0) {
-                // Not first frame --> add odometry constraint (no external map --> use odom constraint)
-                EdgeSE2* odometry = new EdgeSE2;
-                odometry->vertices()[0] = _optimizer.vertex(_frame_num - 1);
-                odometry->vertices()[1] = _optimizer.vertex(_frame_num);
-
-                auto odom_tf = _last_tf_odom_base.inverse() * tf_odom_base.transform;
-                get_tf_coords(x, y, theta, odom_tf);
-                const SE2 odom_meas(x, y, theta);
-                odometry->setMeasurement(odom_meas);
-                odometry->setInformation(_odometry_information); 
-                _optimizer.addEdge(odometry);
+            if (_optimizer.vertices().size() == 0) {
+                const SE2 robot_pose(0, 0, 0);
+                VertexSE2* robot = new VertexSE2;
+                robot->setId(0);
+                robot->setEstimate(robot_pose);
+                _optimizer.addVertex(robot);
             }
-                // For the constraints of the fiducials, we use updateMap function
+                
             updateMap(obs, time, tf_map_base);
+            
         }
         _frame_num++;
-        _last_tf_odom_base = tf_odom_base.transform;
     } else {
         ROS_ERROR("Transform problem!! (no map frame");
     }
     
 }
 
-void G2OFiducialSlam::updateMap(const std::vector<Observation> &obs, const ros::Time &time,
+void G2OFiducialMap::updateMap(const std::vector<Observation> &obs, const ros::Time &time,
                    const tf2::Stamped<TransformWithVariance> &robot_pose) 
 {
     // Set not visible by default
@@ -224,7 +165,7 @@ void G2OFiducialSlam::updateMap(const std::vector<Observation> &obs, const ros::
         tf2::Stamped<TransformWithVariance> T_base_cam;
         T_base_cam.frame_id_ = "base_link";
         T_base_cam.transform = _tf_base_cam;
-        T_base_cam.variance = 1;
+        T_base_cam.variance = 0.0004;
         tf2::Stamped<TransformWithVariance> T_mapFid = robot_pose * T_base_cam * o.T_camFid;
         T_mapFid.frame_id_ = mapFrame; 
 
@@ -250,7 +191,7 @@ void G2OFiducialSlam::updateMap(const std::vector<Observation> &obs, const ros::
             ROS_INFO("New fiducial %d", o.fid);
             fiducials[o.fid] = Fiducial(o.fid, T_mapFid);
             
-            fid->setId(o.fid + _fiducial_id_offset);
+            fid->setId(o.fid);
             fid->setEstimate(fid_pose);
             _optimizer.addVertex(fid);
         }
@@ -260,20 +201,19 @@ void G2OFiducialSlam::updateMap(const std::vector<Observation> &obs, const ros::
                 f.pose.variance = 0.01;
         }
 
-        // Constrait between robot and fiducial!
+        // Constraint between robot and fiducial!
         Eigen::Matrix3d covariance; covariance.fill(0.);
-        covariance(0, 0) = o.T_camFid.variance*2.0;
-        covariance(1, 1) = o.T_camFid.variance*2.0;
-        covariance(2, 2) = o.T_camFid.variance *5.0;
+        covariance(0, 0) = T_mapFid.variance;
+        covariance(1, 1) = T_mapFid.variance;
+        covariance(2, 2) = T_mapFid.variance;
 
         Eigen::Matrix3d information = covariance.inverse();
 
         EdgeSE2* fid_obs = new EdgeSE2;
-        fid_obs->vertices()[0] = _optimizer.vertex(_frame_num);
-        fid_obs->vertices()[1] = _optimizer.vertex(o.fid + _fiducial_id_offset);
+        fid_obs->vertices()[0] = _optimizer.vertex(0);
+        fid_obs->vertices()[1] = _optimizer.vertex(o.fid);
 
-        auto fid_tf =  _tf_base_cam * o.T_camFid;
-        get_tf_coords(x, y, theta, fid_tf.transform);
+        get_tf_coords(x, y, theta, T_mapFid.transform);
         const SE2 fid_meas(x,y,theta);
         fid_obs->setMeasurement(fid_meas);
         fid_obs->setInformation(information);
@@ -295,7 +235,7 @@ void G2OFiducialSlam::updateMap(const std::vector<Observation> &obs, const ros::
     }
 }
 
-void G2OFiducialSlam::get_tf_coords(double &x, double &y, double &theta, const tf2::Transform &t) {
+void G2OFiducialMap::get_tf_coords(double &x, double &y, double &theta, const tf2::Transform &t) {
     x = t.getOrigin().getX();
     y = t.getOrigin().getY();
     auto q = t.getRotation();
@@ -304,7 +244,7 @@ void G2OFiducialSlam::get_tf_coords(double &x, double &y, double &theta, const t
     M.getRPY(roll, pitch, theta);
 }
 
-bool G2OFiducialSlam::checkCameraTransform(const std::string &frame_id) {
+bool G2OFiducialMap::checkCameraTransform(const std::string &frame_id) {
     if (!_tf_base_cam_init)
         this->lookupTransform(baseFrame, frame_id, ros::Time(0), _tf_base_cam);
 
@@ -312,7 +252,7 @@ bool G2OFiducialSlam::checkCameraTransform(const std::string &frame_id) {
 
 }
 
-void G2OFiducialSlam::changeTf(tf2::Transform &t, double x, double y, double theta) {
+void G2OFiducialMap::changeTf(tf2::Transform &t, double x, double y, double theta) {
     t.setOrigin(tf2::Vector3(x, y, 0.0));
     auto q = t.getRotation();
     tf2::Matrix3x3 M(q);
@@ -326,7 +266,7 @@ void G2OFiducialSlam::changeTf(tf2::Transform &t, double x, double y, double the
 /*********************************************************************************
    * optimization
    ********************************************************************************/
-void G2OFiducialSlam::optimize(int n_rounds, bool online) {
+void G2OFiducialMap::optimize(int n_rounds, bool online) {
   // prepare and run the optimization
   // fix the first robot pose to account for gauge freedom
   VertexSE2* firstRobotPose = dynamic_cast<VertexSE2*>(_optimizer.vertex(0));
@@ -337,59 +277,26 @@ void G2OFiducialSlam::optimize(int n_rounds, bool online) {
   firstRobotPose->setFixed(true);
   _optimizer.setVerbose(true);
 
-  tf2::Transform t_end, t_odom_base; // Before optimization --> get odom base
-
-  bool got_transform = lookupTransform(odomFrame, baseFrame, ros::Time(0), t_odom_base);
-
   ROS_INFO("Optimizing");
   _optimizer.initializeOptimization();
   _optimizer.optimize(n_rounds);
   ROS_INFO("Done Optimizing.");
-  int max_id = 0;
-
-  // Initialize path for visualization 
-  nav_msgs::Path p;
-  static int path_seq = 0;
-  p.header.frame_id = mapFrame;
-  p.header.stamp = ros::Time::now();
-  p.header.seq = path_seq++;
 
   for (auto &x:_optimizer.vertices()) {
-      auto y = dynamic_cast<VertexSE2 *> ( x.second);
-      auto &pos = y->estimate();
-      if (y == nullptr) continue;
-      if (x.first >= _fiducial_id_offset) {
-          // Updating fid
-          int fid = x.first - _fiducial_id_offset;
-          
-          Fiducial &curr_fid = fiducials[fid];
-          changeTf(curr_fid.pose.transform, pos[0], pos[1], pos[2]);
-          // ROS_INFO ("Updating fid %d. x = %f. y = %f. yaw = %f", fid, pos[0], pos[1], pos[2]);
-      } else {
-          max_id = std::max(max_id, x.first); // Get max ID
-        
-          tf2::Transform t;
-          changeTf(t, pos[0], pos[1], pos[2]);
-          geometry_msgs::PoseStamped curr_pose;
-          curr_pose.header = p.header;
-          curr_pose.pose.orientation = tf2::toMsg(t.getRotation());
-          curr_pose.pose.position.x = pos[0];
-          curr_pose.pose.position.y = pos[1];
-          curr_pose.pose.position.z = 0.0;
-          p.poses.push_back(curr_pose);
-      }
+    if (x.first == 0)
+        continue;
+    auto y = dynamic_cast<VertexSE2 *> ( x.second);
+    auto &pos = y->estimate();
+    if (y == nullptr) continue;
+    
+    // Updating fid
+    int fid = x.first;
+    
+    Fiducial &curr_fid = fiducials[fid];
+    changeTf(curr_fid.pose.transform, pos[0], pos[1], pos[2]);
+    // ROS_INFO ("Updating fid %d. x = %f. y = %f. yaw = %f", fid, pos[0], pos[1], pos[2]);
   }
-  auto y = dynamic_cast<VertexSE2 *>(_optimizer.vertices()[max_id]);
-  auto pos = y->estimate();
-  if (got_transform) {
-    ROS_INFO("Updating map frame. max_id = %d, x = %f. y = %f. yaw = %f", max_id, pos[0], pos[1], pos[2]);
-    changeTf(t_end, pos[0], pos[1], pos[2]);
-
-    _tf_map_odom = t_end * t_odom_base.inverse();
-  }
-
   publishMarkers();
-  _path_pub.publish(p);
 
   if (_g2o_file.size() > 0) {
     _optimizer.save(_g2o_file.c_str());
@@ -399,12 +306,23 @@ void G2OFiducialSlam::optimize(int n_rounds, bool online) {
   saveMap();
 }
 
+void G2OFiducialMap::estimatedPoseCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr &msg) {
+    Eigen::Matrix3d covariance;
+    covariance.fill(0.);
+    covariance(0, 0) = msg->pose.covariance[0];
+    covariance(1, 1) = msg->pose.covariance[7]; 
+    covariance(2, 2) = msg->pose.covariance[35];
+
+    _map_information = covariance.inverse();
+    _map_pose_variance = msg->pose.covariance[0] + msg->pose.covariance[7];
+}
+
 int main(int argc, char **argv) {
-    ros::init(argc, argv, "g2o_fiducial_slam");
+    ros::init(argc, argv, "g2o_fiducial_map");
     
     sleep(2); // Let the systems initialize
-    std::unique_ptr<G2OFiducialSlam> node;
-    node.reset(new G2OFiducialSlam);
+    std::unique_ptr<G2OFiducialMap> node;
+    node.reset(new G2OFiducialMap);
     double rate = 20.0;
     ros::Rate r(rate);
     
@@ -424,8 +342,6 @@ int main(int argc, char **argv) {
         // node->publishMarkers();
         cont ++;
 
-        node->publishTf(); // emits tf if necessary
-
         if (cont%100 == 0)
             node->publishMarkers();
 
@@ -437,5 +353,4 @@ int main(int argc, char **argv) {
    
     return 0;
 }
-
 

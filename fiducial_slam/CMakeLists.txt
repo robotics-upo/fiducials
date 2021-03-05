@@ -57,14 +57,23 @@ src/base_map.cpp src/map.cpp src/transform_with_variance.cpp)
 add_dependencies(fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
-add_executable(g2o_fiducial_slam src/g2o_fiducial_slam.cpp
+add_executable(g2o_fiducial_map src/g2o_fiducial_map.cpp
                src/base_map.cpp src/transform_with_variance.cpp
                src/Fiducial.cpp src/Observation.cpp
                )
-add_dependencies(g2o_fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
+add_dependencies(g2o_fiducial_map ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
+add_executable(g2o_fiducial_slam src/g2o_fiducial_slam.cpp
+                 src/base_map.cpp src/transform_with_variance.cpp
+                 src/Fiducial.cpp src/Observation.cpp
+                 )
+add_dependencies(g2o_fiducial_slam ${${PROJECT_NAME}_EXPORTED_TARGETS}
+                   ${catkin_EXPORTED_TARGETS})
+  
+
 target_link_libraries(fiducial_slam ${catkin_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(g2o_fiducial_map ${catkin_LIBRARIES} ${OpenCV_LIBS} ${G2O_LIBRARIES})
 target_link_libraries(g2o_fiducial_slam ${catkin_LIBRARIES} ${OpenCV_LIBS} ${G2O_LIBRARIES})
 
 #############
