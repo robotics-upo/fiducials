@@ -287,9 +287,9 @@ void BaseMap::publishMarkers() {
 
     for (auto &map_pair : fiducials) {
         Fiducial &f = map_pair.second;
-        if ((now - f.lastPublished).toSec() > 1.0) {
+        // if ((now - f.lastPublished).toSec() > 1.0) {
             publishMarker(f.id);
-        }
+        // }
     }
 }
 

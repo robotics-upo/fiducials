@@ -19,6 +19,11 @@ std::vector<visualization_msgs::Marker> Fiducial::getMarkers(const std::string &
     std::vector<visualization_msgs::Marker> ret_val;
     visualization_msgs::Marker marker;
 
+    static int seq = 0;
+
+    marker.header.stamp = ros::Time::now();
+    marker.header.frame_id = frame_id;
+    marker.header.seq = ++seq;
     marker.type = visualization_msgs::Marker::CUBE;
     marker.action = visualization_msgs::Marker::ADD;
     toMsg(pose.transform, marker.pose);
@@ -45,14 +50,13 @@ std::vector<visualization_msgs::Marker> Fiducial::getMarkers(const std::string &
     }
     marker.id = id;
     marker.ns = "fiducial";
-    marker.header.frame_id = frame_id;
     ret_val.push_back(marker);
 
     // cylinder scaled by stddev
     visualization_msgs::Marker cylinder;
     cylinder.type = visualization_msgs::Marker::CYLINDER;
     cylinder.action = visualization_msgs::Marker::ADD;
-    cylinder.header.frame_id = frame_id;
+    cylinder.header = marker.header; cylinder.header.seq = ++seq;
     cylinder.color.r = 0.0f;
     cylinder.color.g = 0.0f;
     cylinder.color.b = 1.0f;
@@ -72,10 +76,10 @@ std::vector<visualization_msgs::Marker> Fiducial::getMarkers(const std::string &
     visualization_msgs::Marker text;
     text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
     text.action = visualization_msgs::Marker::ADD;
-    text.header.frame_id = frame_id;
+    text.header = marker.header; text.header.seq = ++seq;
     text.color.r = text.color.g = text.color.b = text.color.a = 1.0f;
     text.id = id;
-    text.scale.x = text.scale.y = text.scale.z = 0.4;
+    text.scale.z = 0.4;
     text.pose.position.x = marker.pose.position.x;
     text.pose.position.y = marker.pose.position.y;
     text.pose.position.z = marker.pose.position.z;

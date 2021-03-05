@@ -22,6 +22,9 @@ G2OFiducialSlam::G2OFiducialSlam() {
     pnh.param<bool>("use_fiducial_area_as_weight", _use_fiducial_area_as_weight, false);
     // Scaling factor for weighing
     pnh.param<double>("weighting_scale", _weighting_scale, 1.0);
+    pnh.param<double>("max_observation_distance", _max_obs_dist, 2.0);
+
+    pnh.param<bool>("do_slam", _do_slam, false);
 
     _ft_sub = nh.subscribe("/fiducial_transforms", 1, &G2OFiducialSlam::transformCallback, this);
 
@@ -52,6 +55,7 @@ G2OFiducialSlam::G2OFiducialSlam() {
     covariance(1, 1) = trans_noise_y*trans_noise_y; 
     covariance(2, 2) = rot_noise*rot_noise;
     _odometry_information = covariance.inverse();
+    _map_information = covariance.inverse();
 
     _tf_map_odom.setOrigin(tf2::Vector3(0,0,0));
     _tf_map_odom.setRotation(tf2::Quaternion(0,0,0,1));
@@ -106,8 +110,21 @@ bool G2OFiducialSlam::load(const std::string &filename) {
             max_id = std::max(max_id, x.first);
         }
     }
-    publishTf();sleep(1);ros::spinOnce();
-    publishMarkers(); ros::spinOnce(); sleep(1);
+    if (_do_slam) {
+        publishTf();
+        sleep(1);
+        ros::spinOnce();
+    } else {
+        const SE2 robot_pose(0, 0, 0);
+        VertexSE2* robot = new VertexSE2;
+        robot->setId(_frame_num);
+        robot->setEstimate(robot_pose);
+        _optimizer.addVertex(robot);
+    }
+    publishMarkers(); 
+    ros::spinOnce(); 
+    sleep(1);
+
     _frame_num = max_id + 1;
     
     return ret_val;
@@ -134,10 +151,16 @@ void G2OFiducialSlam::transformCallback(const fiducial_msgs::FiducialTransformAr
             variance = _weighting_scale * ft.object_error;
         }
 
-        Observation obs(ft.fiducial_id, tf2::Stamped<TransformWithVariance>(
+        double dist = tvec.length();
+                                            
+        // Only include the observation within a range:
+        if (dist < _max_obs_dist) {
+            Observation obs(ft.fiducial_id, tf2::Stamped<TransformWithVariance>(
                                             TransformWithVariance(ft.transform, variance),
                                             msg->header.stamp, msg->header.frame_id));
-        observations.push_back(obs);
+        
+            observations.push_back(obs);
+        }
     }
     
     updateG2O(observations, msg->header.stamp);
@@ -168,10 +191,13 @@ void G2OFiducialSlam::updateG2O(std::vector<Observation> &obs, const ros::Time &
             VertexSE2* robot = new VertexSE2;
             robot->setId(_frame_num);
             robot->setEstimate(robot_pose);
-            _optimizer.addVertex(robot);
 
-            if (_frame_num > 0) {
-                // Not first frame --> add odometry constraint
+            if (_frame_num > 0 || _do_slam)
+                _optimizer.addVertex(robot);
+
+
+            if (_frame_num > 0 && _do_slam) {
+                // Not first frame --> add odometry constraint (no external map --> use odom constraint)
                 EdgeSE2* odometry = new EdgeSE2;
                 odometry->vertices()[0] = _optimizer.vertex(_frame_num - 1);
                 odometry->vertices()[1] = _optimizer.vertex(_frame_num);
@@ -182,10 +208,21 @@ void G2OFiducialSlam::updateG2O(std::vector<Observation> &obs, const ros::Time &
                 odometry->setMeasurement(odom_meas);
                 odometry->setInformation(_odometry_information); 
                 _optimizer.addEdge(odometry);
+            } else if (!_do_slam && _frame_num > 0) {
+                // Do not add constraints in the localization!
+                EdgeSE2* external_loc = new EdgeSE2;
+                external_loc->vertices()[0] = _optimizer.vertex(0);  // From init to end
+                external_loc->vertices()[1] = _optimizer.vertex(_frame_num);
+                auto constraint_tf = tf_map_base.transform;
+                get_tf_coords(x, y, theta, constraint_tf);
 
-                 // For the constraints of the fiducials, we use updateMap function
-                updateMap(obs, time, tf_map_base);
+                const SE2 map_meas(x, y, theta);
+                external_loc->setMeasurement(map_meas);
+                external_loc->setInformation(_map_information);
+                _optimizer.addEdge(external_loc);
             }
+            // For the constraints of the fiducials, we use updateMap function
+            updateMap(obs, time, tf_map_base);
 
            
         }
@@ -281,8 +318,6 @@ void G2OFiducialSlam::updateMap(const std::vector<Observation> &obs, const ros::
         }
     }
 }
-
-
 
 void G2OFiducialSlam::get_tf_coords(double &x, double &y, double &theta, const tf2::Transform &t) {
     x = t.getOrigin().getX();
@@ -389,25 +424,21 @@ void G2OFiducialSlam::optimize(int n_rounds, bool online) {
   saveMap();
 }
 
-std::unique_ptr<G2OFiducialSlam> node;
-int n_iter;
+void G2OFiducialSlam::estimatedPoseCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr &msg) {
+    Eigen::Matrix3d covariance;
+    covariance.fill(0.);
+    covariance(0, 0) = msg->pose.covariance[0];
+    covariance(1, 1) = msg->pose.covariance[7]; 
+    covariance(2, 2) = msg->pose.covariance[35];
 
-void mySigintHandler(int sig) {
-
-    if (node != nullptr) {
-        ROS_INFO("Optimizing on exit.");
-        node->optimize(n_iter*10, false);
-    }   
-
-
-    ros::shutdown();
+    _map_information = covariance.inverse();
 }
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "g2o_fiducial_slam");
     
     sleep(2); // Let the systems initialize
-
+    std::unique_ptr<G2OFiducialSlam> node;
     node.reset(new G2OFiducialSlam);
     double rate = 20.0;
     ros::Rate r(rate);
@@ -415,34 +446,30 @@ int main(int argc, char **argv) {
     int update_secs = 100;
 
     ros::NodeHandle pnh("~");
-    bool emit_tf = true;
-    pnh.param("emit_tf", emit_tf, true);
+    
+    int n_iter;
     pnh.param("n_iter", n_iter, 3);
     pnh.param("update_secs", update_secs, 10);
     const int update_iters = update_secs*rate;
     int cont = 0;
 
-    signal(SIGINT, mySigintHandler);
     while (ros::ok()) {
         ros::spinOnce();
         r.sleep();
         // node->publishMarkers();
         cont ++;
 
-        if (emit_tf) {
-            node->publishTf();
-        }
+        node->publishTf(); // emits tf if necessary
+
+        if (cont%100 == 0)
+            node->publishMarkers();
 
         // Once the data has been collected --> optimize with g2o
         if (node != nullptr && cont % update_iters == 0) {
             node->optimize(n_iter);
         }
     }
-    if (node != nullptr) {
-        ROS_INFO("Optimizing on exit.");
-        node->optimize(n_iter*10, false);
-    }    
-    sleep(10);
+   
     return 0;
 }
 

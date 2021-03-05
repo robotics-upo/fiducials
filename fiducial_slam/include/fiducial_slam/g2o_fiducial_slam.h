@@ -64,37 +64,42 @@ public:
     bool load(const std::string &filename);
 
     void publishTf() const {
-        static tf2_ros::TransformBroadcaster br;
-        geometry_msgs::TransformStamped transform_stamped;
-        transform_stamped.header.frame_id = mapFrame;
-        transform_stamped.header.stamp = ros::Time::now();
-        transform_stamped.child_frame_id = odomFrame;
-        transform_stamped.transform = tf2::toMsg(_tf_map_odom);
-        br.sendTransform(transform_stamped);
-        transform_stamped.header.seq++;
+        if (_do_slam) {
+            static tf2_ros::TransformBroadcaster br;
+            geometry_msgs::TransformStamped transform_stamped;
+            transform_stamped.header.frame_id = mapFrame;
+            transform_stamped.header.stamp = ros::Time::now();
+            transform_stamped.child_frame_id = odomFrame;
+            transform_stamped.transform = tf2::toMsg(_tf_map_odom);
+            br.sendTransform(transform_stamped);
+            transform_stamped.header.seq++;
+        }
     }
 
 private:
-    ros::Subscriber _ft_sub, _verticesSub;
+    ros::Subscriber _ft_sub, _verticesSub, _pose_sub;
     bool _use_fiducial_area_as_weight;
-    double _weighting_scale;
+    double _weighting_scale, _max_obs_dist;
     ros::Publisher _path_pub;
     ros::ServiceServer _optimize_service;
     tf2::Transform _last_tf_odom_base, _tf_base_cam, _tf_map_odom;
     bool _tf_base_cam_init = false;
     const int _fiducial_id_offset = 1000000;
     std::string _g2o_file;
+    bool _do_slam = false;
 
     // G2O STUFF
     
     // allocating the optimizer
     g2o::SparseOptimizer _optimizer;
     std::unique_ptr<SlamLinearSolver> _linear_solver; 
-    Eigen::Matrix3d _odometry_information;
+    Eigen::Matrix3d _odometry_information, _map_information;
 
     int _frame_num = 0;
 
     void transformCallback(const fiducial_msgs::FiducialTransformArray::ConstPtr &msg);
+
+    void estimatedPoseCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr &msg);
 
     bool optimizeServiceService(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res);
 
